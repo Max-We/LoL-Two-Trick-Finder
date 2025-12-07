@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LoL Two-Trick Finder</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            // Modern Hextech-inspired palette (Flat, no gradients)
+            hextech: {
+              black: '#010A13',
+              blue: {
+                900: '#091428',
+                800: '#0A323C',
+                500: '#0AC8B9',
+              },
+              gold: {
+                100: '#F0E6D2',
+                400: '#C8AA6E',
+                500: '#785A28',
+                600: '#463714',
+              }
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom Scrollbar for the dropdown */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.1);
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #C8AA6E;
+      border-radius: 4px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #785A28;
+    }
+
+    /* Fade in animation */
+    .fade-in {
+      animation: fadeIn 0.3s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+</head>
+
+<body
+  class="bg-slate-100 dark:bg-hextech-black text-slate-800 dark:text-hextech-gold-100 min-h-screen flex flex-col items-center py-12 px-4 transition-colors duration-200">
+
+  <main class="w-full max-w-3xl space-y-8">
+
+    <!-- 1. Explanation: What is this? -->
+    <header class="text-center space-y-4">
+      <h1 class="text-4xl font-bold tracking-tight text-slate-900 dark:text-white uppercase">
+        Top Lane <span class="text-yellow-600 dark:text-hextech-gold-400">Two-Trick</span> Finder
+      </h1>
+      <p class="text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
+        Identify the optimal secondary champion to cover your main's weaknesses.
+        Select your OTP below to generate a matchup coverage list based on statistical winrate data.
+      </p>
+    </header>
+
+    <!-- 2. Search & Results Card -->
+    <!-- Added overflow-visible to ensure dropdown isn't cut off -->
+    <div
+      class="bg-white dark:bg-hextech-blue-900 border border-slate-200 dark:border-hextech-gold-600/30 rounded-xl shadow-2xl p-6 md:p-8 overflow-visible relative z-10">
+
+      <!-- Search Section -->
+      <div class="relative z-50">
+        <label for="champion-search"
+          class="block text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-hextech-gold-400 mb-2">
+          Select Your Champion
+        </label>
+
+        <div class="relative group">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <svg class="h-5 w-5 text-slate-400 dark:text-hextech-gold-500" fill="none" viewBox="0 0 24 24"
+              stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+          <input type="text" id="champion-search"
+            class="block w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-hextech-black border border-slate-300 dark:border-hextech-gold-600/40 rounded-lg 
+                   text-slate-900 dark:text-hextech-gold-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-yellow-500 dark:focus:ring-hextech-gold-400 focus:border-transparent transition-all"
+            placeholder="Type to search (e.g. Aatrox, Camille...)" autocomplete="off" />
+
+          <!-- Dropdown Results -->
+          <ul id="search-dropdown"
+            class="absolute z-50 w-full mt-1 max-h-60 overflow-auto custom-scrollbar bg-white dark:bg-hextech-blue-900 border border-slate-200 dark:border-hextech-gold-600/30 rounded-lg shadow-xl hidden">
+            <!-- Items injected by JS -->
+          </ul>
+        </div>
+      </div>
+
+      <!-- Results Display (Initially Hidden) -->
+      <div id="results-container" class="hidden mt-8 fade-in">
+        <div
+          class="flex items-center justify-between border-b border-slate-200 dark:border-hextech-gold-600/20 pb-4 mb-4">
+          <h2 class="text-xl font-bold text-slate-800 dark:text-white">
+            Best Pairs for <span id="selected-champion-name" class="text-yellow-600 dark:text-hextech-gold-400"></span>
+          </h2>
+          <span class="text-xs uppercase font-semibold text-slate-400 dark:text-slate-500 tracking-wider">Based on
+            Matchup Coverage</span>
+        </div>
+
+        <!-- Top 10 Table -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr>
+                <th
+                  class="py-3 px-4 bg-slate-100 dark:bg-hextech-black/30 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-hextech-gold-400 rounded-l-lg">
+                  Rank</th>
+                <th
+                  class="py-3 px-4 bg-slate-100 dark:bg-hextech-black/30 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-hextech-gold-400">
+                  Partner Champion</th>
+                <th
+                  class="py-3 px-4 bg-slate-100 dark:bg-hextech-black/30 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-hextech-gold-400 text-right rounded-r-lg">
+                  Score</th>
+              </tr>
+            </thead>
+            <tbody id="top-10-body" class="divide-y divide-slate-200 dark:divide-hextech-gold-600/10 text-sm">
+              <!-- JS Injected -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Expandable Full List -->
+        <div class="mt-6">
+          <button id="toggle-all-btn"
+            class="w-full py-2 px-4 border border-dashed border-slate-300 dark:border-hextech-gold-600/40 rounded-lg text-slate-500 dark:text-hextech-gold-400 text-sm font-medium hover:bg-slate-50 dark:hover:bg-hextech-gold-600/10 transition-colors focus:outline-none">
+            Show all champions ▼
+          </button>
+
+          <div id="all-results-wrapper" class="hidden mt-4">
+            <div
+              class="overflow-x-auto max-h-96 overflow-y-auto custom-scrollbar border border-slate-200 dark:border-hextech-gold-600/20 rounded-lg">
+              <table class="w-full text-left">
+                <tbody id="all-results-body"
+                  class="divide-y divide-slate-200 dark:divide-hextech-gold-600/10 text-sm bg-slate-50 dark:bg-hextech-black/20">
+                  <!-- JS Injected -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Error / Loading State -->
+      <div id="status-message" class="hidden mt-6 text-center text-sm text-slate-500"></div>
+    </div>
+
+    <section
+      class="bg-slate-200 dark:bg-hextech-blue-900/50 rounded-xl p-6 border border-transparent dark:border-hextech-gold-600/10">
+      <h3 class="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-hextech-gold-400 mb-3">
+        How it works
+      </h3>
+
+      <p class="text-xs text-slate-500 dark:text-slate-500 italic mb-3 text-justify">
+        Note: This score is a robust heuristic designed to capture overall matchup coverage. It should not be
+        interpreted as a probability or expected winrate.
+      </p>
+
+      <div class="space-y-3 text-sm text-slate-600 dark:text-slate-400 leading-relaxed text-justify">
+        <p>
+          <span class="font-semibold">Casual explanation.</span>
+          For each enemy pick, the system looks at how the main and the partner usually perform into
+          that matchup (clearly losing / roughly even / clearly winning), and how often that enemy
+          actually shows up. For that enemy, it keeps the better of the two options (main or
+          partner), weighted by how common the matchup is. Doing this across all enemy champions
+          gives a single score that reflects how well this duo performs into the overall field of
+          opponents.
+        </p>
+
+        <p>
+          <span class="font-semibold">Precise explanation.</span>
+          Let enemies be indexed by \(i = 1,\dots,N\). For main \(m\) and partner \(p\), let
+          \(\Delta_m(i), \Delta_p(i)\) be their winrate deltas vs enemy \(i\), and define ordinal scores
+          \(w_m(i), w_p(i) \in \{-1,0,1\}\) via a thresholding map \(\text{scale}(\Delta)\).
+          Let \(n_m(i), n_p(i)\) be match counts and
+          \(p_m(i) = n_m(i)/\sum_j n_m(j)\), \(p_p(i) = n_p(i)/\sum_j n_p(j)\) the corresponding matchup
+          frequencies. The weighted scores are
+          \(v_m(i) = w_m(i)\,p_m(i)\), \(v_p(i) = w_p(i)\,p_p(i)\), and the coverage score is
+          \[
+          S(m,p) = \sum_{i=1}^N \max\{v_m(i),\, v_p(i)\},
+          \]
+          i.e. the sum over enemies of the better of the two weighted outcomes.
+        </p>
+      </div>
+    </section>
+
+
+  </main>
+
+  <script>
+    // --- Data & Constants ---
+    const championList = [
+      "Aatrox", "Akali", "Ambessa", "Aurora", "Camille", "Cassiopeia", "ChoGath", "Darius",
+      "DrMundo", "Fiora", "Galio", "Gangplank", "Garen", "Gnar", "Gragas", "Gwen",
+      "Heimerdinger", "Illaoi", "Irelia", "Jax", "Jayce", "KSante", "Karma", "Kayle",
+      "Kennen", "Kled", "Malphite", "Maokai", "Mordekaiser", "Nasus", "Olaf", "Ornn",
+      "Pantheon", "Poppy", "Quinn", "Renekton", "Rengar", "Riven", "Rumble", "Ryze",
+      "Sett", "Shen", "Singed", "Sion", "Smolder", "Swain", "Sylas", "TahmKench",
+      "Teemo", "Trundle", "Tryndamere", "Udyr", "Urgot", "Varus", "Vayne", "Viktor",
+      "Vladimir", "Volibear", "Warwick", "Wukong", "Yasuo", "Yone", "Yorick", "Zac"
+    ];
+
+    const slugify = (name) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // --- State ---
+    let currentData = [];
+
+    // --- DOM Elements ---
+    const searchInput = document.getElementById('champion-search');
+    const dropdown = document.getElementById('search-dropdown');
+    const resultsContainer = document.getElementById('results-container');
+    const selectedChampName = document.getElementById('selected-champion-name');
+    const top10Body = document.getElementById('top-10-body');
+    const allResultsBody = document.getElementById('all-results-body');
+    const toggleAllBtn = document.getElementById('toggle-all-btn');
+    const allResultsWrapper = document.getElementById('all-results-wrapper');
+    const statusMsg = document.getElementById('status-message');
+
+    // --- Core Logic ---
+
+    // Fetch full CSV data for a champion
+    async function fetchChampionData(champion) {
+      statusMsg.textContent = `Loading data for ${champion}...`;
+      statusMsg.classList.remove('hidden');
+      resultsContainer.classList.add('hidden');
+
+      try {
+        const slug = slugify(champion);
+        const response = await fetch(`champions/${slug}_scores.csv`);
+
+        if (!response.ok) throw new Error('Data not found');
+
+        const text = await response.text();
+        const rows = text.trim().split(/\r?\n/).slice(1); // Drop header
+
+        // Parse all rows
+        const data = rows.map(row => {
+          const [partner, score] = row.split(',');
+          return { partner, score: Number(score) };
+        });
+
+        // Ensure sorted by score desc
+        data.sort((a, b) => b.score - a.score);
+
+        currentData = data;
+        renderResults(champion);
+        statusMsg.classList.add('hidden');
+      } catch (err) {
+        console.error(err);
+        statusMsg.innerHTML = `<span class="text-red-500">Error loading data for <strong>${champion}</strong>. Please try another.</span>`;
+      }
+    }
+
+    function renderResults(champion) {
+      selectedChampName.textContent = champion;
+
+      // Top 10
+      const top10 = currentData.slice(0, 10);
+      top10Body.innerHTML = top10.map((item, index) => createRowHtml(item, index + 1, true)).join('');
+
+      // Rest
+      const rest = currentData.slice(10);
+      allResultsBody.innerHTML = rest.map((item, index) => createRowHtml(item, index + 11, false)).join('');
+
+      resultsContainer.classList.remove('hidden');
+    }
+
+    function createRowHtml(item, rank, isTop10) {
+      const scoreClass = isTop10 ? "text-slate-900 dark:text-hextech-gold-100 font-bold" : "text-slate-600 dark:text-slate-400";
+      return `
+        <tr class="hover:bg-slate-50 dark:hover:bg-hextech-gold-600/10 transition-colors">
+          <td class="py-3 px-4 font-mono text-slate-400 dark:text-slate-600">#${rank}</td>
+          <td class="py-3 px-4 font-medium text-slate-800 dark:text-slate-200">${item.partner}</td>
+          <td class="py-3 px-4 text-right ${scoreClass}">${item.score.toFixed(3)}</td>
+        </tr>
+      `;
+    }
+
+    // --- Interaction Logic ---
+
+    function filterDropdown(query) {
+      const lowerQuery = query.toLowerCase();
+      const matches = championList.filter(c => c.toLowerCase().includes(lowerQuery));
+
+      dropdown.innerHTML = '';
+
+      if (matches.length === 0) {
+        dropdown.classList.add('hidden');
+        return;
+      }
+
+      matches.forEach(champ => {
+        const li = document.createElement('li');
+        li.className = "px-4 py-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-hextech-gold-600/20 text-slate-700 dark:text-slate-200 transition-colors";
+        li.textContent = champ;
+        li.onclick = () => selectChampion(champ);
+        dropdown.appendChild(li);
+      });
+
+      dropdown.classList.remove('hidden');
+    }
+
+    function selectChampion(champ) {
+      searchInput.value = champ;
+      dropdown.classList.add('hidden');
+      fetchChampionData(champ);
+    }
+
+    // Event Listeners
+    searchInput.addEventListener('input', (e) => {
+      filterDropdown(e.target.value);
+    });
+
+    searchInput.addEventListener('focus', () => {
+      if (searchInput.value) filterDropdown(searchInput.value);
+      else filterDropdown(''); // Show all on empty focus
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!searchInput.contains(e.target) && !dropdown.contains(e.target)) {
+        dropdown.classList.add('hidden');
+      }
+    });
+
+    toggleAllBtn.addEventListener('click', () => {
+      const isHidden = allResultsWrapper.classList.contains('hidden');
+      if (isHidden) {
+        allResultsWrapper.classList.remove('hidden');
+        toggleAllBtn.textContent = "Hide full list ▲";
+      } else {
+        allResultsWrapper.classList.add('hidden');
+        toggleAllBtn.textContent = "Show all champions ▼";
+      }
+    });
+
+  </script>
+</body>
+
+</html>
