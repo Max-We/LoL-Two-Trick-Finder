@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LoL Two-Trick Finder</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background-color: #0f172a;
+      color: #e2e8f0;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      display: grid;
+      gap: 24px;
+      place-items: center;
+    }
+
+    main {
+      width: min(900px, 100%);
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(226, 232, 240, 0.12);
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.8rem;
+      letter-spacing: -0.03em;
+    }
+
+    p.description {
+      margin: 0 0 18px;
+      color: #cbd5e1;
+      line-height: 1.55;
+    }
+
+    .search {
+      display: grid;
+      gap: 8px;
+    }
+
+    label {
+      font-weight: 600;
+      color: #e2e8f0;
+    }
+
+    input[type="text"] {
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(226, 232, 240, 0.2);
+      background: rgba(15, 23, 42, 0.6);
+      color: inherit;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    input[type="text"]:focus {
+      border-color: #818cf8;
+      box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.35);
+    }
+
+    .result {
+      margin-top: 12px;
+      padding: 14px 16px;
+      border-radius: 12px;
+      border: 1px solid rgba(129, 140, 248, 0.35);
+      background: rgba(129, 140, 248, 0.08);
+      display: none;
+    }
+
+    .result strong {
+      color: #c7d2fe;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+      font-size: 0.95rem;
+    }
+
+    th, td {
+      padding: 10px;
+      text-align: left;
+      border-bottom: 1px solid rgba(226, 232, 240, 0.12);
+    }
+
+    th {
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 0.78rem;
+      color: #cbd5e1;
+    }
+
+    tbody tr:hover {
+      background: rgba(226, 232, 240, 0.05);
+    }
+
+    .footer-note {
+      margin-top: 14px;
+      font-size: 0.9rem;
+      color: #cbd5e1;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Top Lane Two-Trick Finder</h1>
+      <p class="description">
+        Pick your one-trick (OTP) and instantly see the best second champion to cover as many
+        rough top-lane matchups as possible. Data is pulled directly from the per-champion
+        matchup coverage CSVs in <code>champions/</code>.
+      </p>
+    </header>
+
+    <section class="search">
+      <label for="champion">Choose your OTP (type to search):</label>
+      <input list="champions" id="champion" name="champion" placeholder="Start typing a champion..." autocomplete="off" />
+      <datalist id="champions"></datalist>
+      <div id="result" class="result"></div>
+    </section>
+
+    <section>
+      <h2>All optimal two-trick pairs</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>OTP</th>
+            <th>Optimal partner</th>
+            <th>Coverage score</th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+      <p class="footer-note">Higher coverage scores mean better matchup coverage when pairing these champions.</p>
+    </section>
+  </main>
+
+  <script>
+    const championList = [
+      "Aatrox", "Akali", "Ambessa", "Aurora", "Camille", "Cassiopeia", "ChoGath", "Darius",
+      "DrMundo", "Fiora", "Galio", "Gangplank", "Garen", "Gnar", "Gragas", "Gwen",
+      "Heimerdinger", "Illaoi", "Irelia", "Jax", "Jayce", "KSante", "Karma", "Kayle",
+      "Kennen", "Kled", "Malphite", "Maokai", "Mordekaiser", "Nasus", "Olaf", "Ornn",
+      "Pantheon", "Poppy", "Quinn", "Renekton", "Rengar", "Riven", "Rumble", "Ryze",
+      "Sett", "Shen", "Singed", "Sion", "Smolder", "Swain", "Sylas", "TahmKench",
+      "Teemo", "Trundle", "Tryndamere", "Udyr", "Urgot", "Varus", "Vayne", "Viktor",
+      "Vladimir", "Volibear", "Warwick", "Wukong", "Yasuo", "Yone", "Yorick", "Zac"
+    ];
+
+    const slugify = (name) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    async function fetchTopPartner(champion) {
+      const slug = slugify(champion);
+      const response = await fetch(`champions/${slug}_scores.csv`);
+      if (!response.ok) {
+        throw new Error(`Failed to load data for ${champion}`);
+      }
+      const text = await response.text();
+      const rows = text.trim().split(/\r?\n/).slice(1); // drop header
+      if (!rows.length) {
+        throw new Error(`No partner data for ${champion}`);
+      }
+      const [partner, score] = rows[0].split(',');
+      return { champion, partner, score: Number(score) };
+    }
+
+    async function loadPartners() {
+      const promises = championList.map(fetchTopPartner);
+      return Promise.all(promises);
+    }
+
+    function populateTable(entries) {
+      const tbody = document.getElementById('table-body');
+      tbody.innerHTML = '';
+      entries.forEach(({ champion, partner, score }) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${champion}</td>
+          <td>${partner}</td>
+          <td>${score.toFixed(3)}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    function populateSearch(entries) {
+      const datalist = document.getElementById('champions');
+      datalist.innerHTML = '';
+      entries.forEach(({ champion }) => {
+        const option = document.createElement('option');
+        option.value = champion;
+        datalist.appendChild(option);
+      });
+    }
+
+    function setResult(content) {
+      const el = document.getElementById('result');
+      el.innerHTML = content;
+      el.style.display = 'block';
+    }
+
+    function clearResult() {
+      const el = document.getElementById('result');
+      el.style.display = 'none';
+      el.textContent = '';
+    }
+
+    function setupSearch(entries) {
+      const input = document.getElementById('champion');
+      const byName = new Map(entries.map(entry => [entry.champion.toLowerCase(), entry]));
+
+      input.addEventListener('input', () => {
+        const pick = input.value.trim().toLowerCase();
+        if (!pick) {
+          clearResult();
+          return;
+        }
+        const match = byName.get(pick);
+        if (match) {
+          setResult(`
+            Your optimal partner: <strong>${match.partner}</strong><br />
+            Coverage score: <strong>${match.score.toFixed(3)}</strong>
+          `);
+        } else {
+          setResult('No data for that pick — please select a champion from the list.');
+        }
+      });
+    }
+
+    (async () => {
+      try {
+        const entries = await loadPartners();
+        populateTable(entries);
+        populateSearch(entries);
+        setupSearch(entries);
+      } catch (err) {
+        const body = document.querySelector('body');
+        body.innerHTML = '<p>Unable to load champion partner data.</p>';
+        console.error(err);
+      }
+    })();
+  </script>
+</body>
+</html>
