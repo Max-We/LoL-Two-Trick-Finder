@@ -121,6 +121,15 @@
             <!-- Items injected by JS -->
           </ul>
         </div>
+
+        <div id="patch-control" class="hidden mt-4 flex-wrap items-center justify-end gap-2">
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-hextech-gold-400">
+            Patches
+          </span>
+          <div id="patch-options" class="flex flex-wrap items-center justify-end gap-2"></div>
+          <button id="select-all-patches" type="button"
+            class="text-xs font-medium text-yellow-600 hover:underline dark:text-hextech-gold-400">Select all</button>
+        </div>
       </div>
 
       <!-- Results Display (Initially Hidden) -->
@@ -146,9 +155,9 @@
                 <th
                   class="py-3 px-4 bg-slate-100 dark:bg-hextech-black/30 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-hextech-gold-400">
                   Partner Champion</th>
-                <th
-                  class="py-3 px-4 bg-slate-100 dark:bg-hextech-black/30 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-hextech-gold-400 text-right rounded-r-lg">
-                  Score</th>
+                <th id="score-header"
+                  class="rounded-r-lg py-3 px-4 bg-slate-100 dark:bg-hextech-black/30 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-hextech-gold-400 text-right">
+                  Score (std.)</th>
               </tr>
             </thead>
             <tbody id="top-10-body" class="divide-y divide-slate-200 dark:divide-hextech-gold-600/10 text-sm">
@@ -242,6 +251,10 @@
 
     // --- State ---
     let currentData = [];
+    let datasetPatches = [];
+    let datasetTier = 'emerald_plus';
+    let selectedPatches = [];
+    let currentChampion = null;
 
     // --- DOM Elements ---
     const searchInput = document.getElementById('champion-search');
@@ -254,6 +267,9 @@
     const allResultsWrapper = document.getElementById('all-results-wrapper');
     const statusMsg = document.getElementById('status-message');
     const dataContext = document.getElementById('data-context');
+    const patchControl = document.getElementById('patch-control');
+    const patchOptions = document.getElementById('patch-options');
+    const selectAllPatches = document.getElementById('select-all-patches');
 
     async function loadDatasetMetadata() {
       try {
@@ -264,39 +280,111 @@
           championList = metadata.champions;
         }
         const patches = Array.isArray(metadata.patches) ? metadata.patches : [metadata.patch].filter(Boolean);
-        if (patches.length && metadata.tier) {
-          const tier = metadata.tier.replace('_plus', '+').replaceAll('_', ' ');
-          const label = patches.length === 1 ? `Patch ${patches[0]}` : `Patches ${patches.join(', ')}`;
-          dataContext.textContent = `${label} · ${tier} · Matchup coverage`;
+        datasetPatches = patches;
+        datasetTier = metadata.tier || datasetTier;
+        if (patches.length) {
+          selectedPatches = [...patches];
+          patchOptions.innerHTML = '';
+          [...patches].reverse().forEach(patch => {
+            const label = document.createElement('label');
+            label.className = 'inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-hextech-gold-600/40 dark:bg-hextech-black dark:text-slate-300 dark:hover:bg-hextech-gold-600/10';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = patch;
+            checkbox.checked = true;
+            checkbox.className = 'h-4 w-4 rounded border-slate-300 accent-yellow-600 dark:accent-hextech-gold-400';
+            const text = document.createElement('span');
+            text.textContent = `Patch ${patch}`;
+            label.append(checkbox, text);
+            patchOptions.appendChild(label);
+          });
+          patchControl.classList.remove('hidden');
+          patchControl.classList.add('flex');
+          updatePatchControls();
         }
       } catch (err) {
         console.warn('Could not load dataset metadata; using the embedded champion list.', err);
       }
     }
 
-    loadDatasetMetadata();
+    const metadataReady = loadDatasetMetadata();
+
+    function updateDataContext() {
+      const tier = datasetTier.replace('_plus', '+').replaceAll('_', ' ');
+      const allSelected = selectedPatches.length === datasetPatches.length;
+      const label = selectedPatches.length === 1
+        ? `Patch ${selectedPatches[0]}`
+        : allSelected
+          ? `All patches (${selectedPatches.length}-patch average)`
+          : `${selectedPatches.length} patches (average): ${selectedPatches.join(', ')}`;
+      dataContext.textContent = `${label} · ${tier} · Matchup coverage`;
+    }
+
+    function updatePatchControls() {
+      selectAllPatches.classList.toggle('invisible', selectedPatches.length === datasetPatches.length);
+      updateDataContext();
+    }
+
+    function applyDatasetSelection() {
+      updatePatchControls();
+      if (currentChampion) fetchChampionData(currentChampion);
+    }
 
     // --- Core Logic ---
 
-    // Fetch full CSV data for a champion
+    async function fetchPatchScores(champion, patch) {
+      const slug = slugify(champion);
+      const path = `champions/patches/${encodeURIComponent(patch)}/${slug}_scores.csv`;
+      const response = await fetch(path);
+      if (!response.ok) throw new Error(`Data not found for patch ${patch}`);
+
+      const text = await response.text();
+      const lines = text.trim().split(/\r?\n/);
+      const headers = lines[0].split(',');
+      const partnerIndex = headers.indexOf('partner');
+      const scoreIndex = headers.indexOf('score');
+      if (partnerIndex < 0 || scoreIndex < 0) throw new Error(`Invalid patch ${patch} data`);
+
+      const scores = new Map();
+      lines.slice(1).forEach(row => {
+        const values = row.split(',');
+        const partner = values[partnerIndex];
+        const score = Number(values[scoreIndex]);
+        if (!partner || !Number.isFinite(score)) throw new Error(`Invalid patch ${patch} score row`);
+        scores.set(partner, score);
+      });
+      return { patch, scores };
+    }
+
+    // Fetch one patch, or all patches and average their independently calculated scores.
     async function fetchChampionData(champion) {
       statusMsg.textContent = `Loading data for ${champion}...`;
       statusMsg.classList.remove('hidden');
       resultsContainer.classList.add('hidden');
 
       try {
-        const slug = slugify(champion);
-        const response = await fetch(`champions/${slug}_scores.csv`);
+        await metadataReady;
+        const patches = selectedPatches;
+        if (!patches.length) throw new Error('No patch datasets are available');
+        const datasets = await Promise.all(patches.map(patch => fetchPatchScores(champion, patch)));
+        const partners = [...datasets[0].scores.keys()];
 
-        if (!response.ok) throw new Error('Data not found');
-
-        const text = await response.text();
-        const rows = text.trim().split(/\r?\n/).slice(1); // Drop header
-
-        // Parse all rows
-        const data = rows.map(row => {
-          const [partner, score] = row.split(',');
-          return { partner, score: Number(score) };
+        const data = partners.map(partner => {
+          const patchScores = datasets.map(dataset => {
+            const score = dataset.scores.get(partner);
+            if (!Number.isFinite(score)) {
+              throw new Error(`Missing ${partner} score for patch ${dataset.patch}`);
+            }
+            return { patch: dataset.patch, score };
+          });
+          const scores = patchScores.map(item => item.score);
+          const aggregateScore = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+          const variance = scores.reduce((sum, score) => sum + (score - aggregateScore) ** 2, 0) / scores.length;
+          return {
+            partner,
+            score: aggregateScore,
+            standardDeviation: Math.sqrt(variance),
+          };
         });
 
         // Ensure sorted by score desc
@@ -305,6 +393,7 @@
         currentData = data;
         renderResults(champion);
         statusMsg.classList.add('hidden');
+        statusMsg.textContent = '';
       } catch (err) {
         console.error(err);
         statusMsg.innerHTML = `<span class="text-red-500">Error loading data for <strong>${champion}</strong>. Please try another.</span>`;
@@ -331,7 +420,9 @@
         <tr class="hover:bg-slate-50 dark:hover:bg-hextech-gold-600/10 transition-colors">
           <td class="py-3 px-4 font-mono text-slate-400 dark:text-slate-600">#${rank}</td>
           <td class="py-3 px-4 font-medium text-slate-800 dark:text-slate-200">${item.partner}</td>
-          <td class="py-3 px-4 text-right ${scoreClass}">${item.score.toFixed(3)}</td>
+          <td class="py-3 px-4 text-right ${scoreClass}" title="Mean score (standard deviation across selected patches)">
+            ${item.score.toFixed(3)} <span class="font-normal text-slate-400 dark:text-slate-500">(${item.standardDeviation.toFixed(3)})</span>
+          </td>
         </tr>
       `;
     }
@@ -361,6 +452,7 @@
     }
 
     function selectChampion(champ) {
+      currentChampion = champ;
       searchInput.value = champ;
       dropdown.classList.add('hidden');
       fetchChampionData(champ);
@@ -392,6 +484,23 @@
         allResultsWrapper.classList.add('hidden');
         toggleAllBtn.textContent = "Show all champions ▼";
       }
+    });
+
+    patchOptions.addEventListener('change', event => {
+      if (!(event.target instanceof HTMLInputElement)) return;
+      const checked = [...patchOptions.querySelectorAll('input:checked')].map(input => input.value);
+      if (!checked.length) {
+        event.target.checked = true;
+        return;
+      }
+      selectedPatches = datasetPatches.filter(patch => checked.includes(patch));
+      applyDatasetSelection();
+    });
+
+    selectAllPatches.addEventListener('click', () => {
+      patchOptions.querySelectorAll('input').forEach(input => { input.checked = true; });
+      selectedPatches = [...datasetPatches];
+      applyDatasetSelection();
     });
 
   </script>
