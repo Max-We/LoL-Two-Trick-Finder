@@ -130,7 +130,8 @@
           <h2 class="text-xl font-bold text-slate-800 dark:text-white">
             Best Pairs for <span id="selected-champion-name" class="text-yellow-600 dark:text-hextech-gold-400"></span>
           </h2>
-          <span class="text-xs uppercase font-semibold text-slate-400 dark:text-slate-500 tracking-wider">Based on
+          <span id="data-context"
+            class="text-xs uppercase font-semibold text-slate-400 dark:text-slate-500 tracking-wider">Based on
             Matchup Coverage</span>
         </div>
 
@@ -226,7 +227,7 @@
 
   <script>
     // --- Data & Constants ---
-    const championList = [
+    let championList = [
       "Aatrox", "Akali", "Ambessa", "Aurora", "Camille", "Cassiopeia", "ChoGath", "Darius",
       "DrMundo", "Fiora", "Galio", "Gangplank", "Garen", "Gnar", "Gragas", "Gwen",
       "Heimerdinger", "Illaoi", "Irelia", "Jax", "Jayce", "KSante", "Karma", "Kayle",
@@ -234,7 +235,7 @@
       "Pantheon", "Poppy", "Quinn", "Renekton", "Rengar", "Riven", "Rumble", "Ryze",
       "Sett", "Shen", "Singed", "Sion", "Smolder", "Swain", "Sylas", "TahmKench",
       "Teemo", "Trundle", "Tryndamere", "Udyr", "Urgot", "Varus", "Vayne", "Viktor",
-      "Vladimir", "Volibear", "Warwick", "Wukong", "Yasuo", "Yone", "Yorick", "Zac"
+      "Vladimir", "Volibear", "Warwick", "Wukong", "Yasuo", "Yone", "Yorick", "Zaahen", "Zac"
     ];
 
     const slugify = (name) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -252,6 +253,28 @@
     const toggleAllBtn = document.getElementById('toggle-all-btn');
     const allResultsWrapper = document.getElementById('all-results-wrapper');
     const statusMsg = document.getElementById('status-message');
+    const dataContext = document.getElementById('data-context');
+
+    async function loadDatasetMetadata() {
+      try {
+        const response = await fetch('champions/index.json');
+        if (!response.ok) return;
+        const metadata = await response.json();
+        if (Array.isArray(metadata.champions) && metadata.champions.length) {
+          championList = metadata.champions;
+        }
+        const patches = Array.isArray(metadata.patches) ? metadata.patches : [metadata.patch].filter(Boolean);
+        if (patches.length && metadata.tier) {
+          const tier = metadata.tier.replace('_plus', '+').replaceAll('_', ' ');
+          const label = patches.length === 1 ? `Patch ${patches[0]}` : `Patches ${patches.join(', ')}`;
+          dataContext.textContent = `${label} · ${tier} · Matchup coverage`;
+        }
+      } catch (err) {
+        console.warn('Could not load dataset metadata; using the embedded champion list.', err);
+      }
+    }
+
+    loadDatasetMetadata();
 
     // --- Core Logic ---
 
